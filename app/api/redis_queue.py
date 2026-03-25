@@ -1,5 +1,7 @@
+import os
 import redis
 from rq import Queue
+
 
 # Pull REDIS_HOST from the environment
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")

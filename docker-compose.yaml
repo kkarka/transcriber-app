@@ -11,8 +11,6 @@ services:
     image: postgres:15-alpine
     container_name: transcriber_db
     environment:
-      - DB_HOST=db
-      - REDIS_HOST=redis
       - POSTGRES_USER=kiran
       - POSTGRES_PASSWORD=password123
       - POSTGRES_DB=transcription_db
