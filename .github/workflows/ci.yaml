@@ -3,6 +3,7 @@ name: CI/CD Security & Build Pipeline
 on:
   push:
     branches: [ "main", "develop" ]
+    tags: [ "v*.*.*" ]
   pull_request:
     branches: [ "main", "develop" ]
 
@@ -59,30 +60,59 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- 1. API Image ---
+      # ==========================================
+      # 1. API IMAGE
+      # ==========================================
+      - name: Extract API metadata
+        id: meta-api
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-api
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha
+            type=raw,value=${{ github.sha }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
       - name: Build API Image
         uses: docker/build-push-action@v5
         with:
           context: ./app
           file: ./app/api/Dockerfile
-          push: false # Wait to push until after the scan
-          load: true  # Load into local Docker daemon for Trivy
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-api:${{ github.sha }}
+          push: false 
+          load: true 
+          tags: ${{ steps.meta-api.outputs.tags }}
+          labels: ${{ steps.meta-api.outputs.labels }}
 
       - name: Run Trivy vulnerability scanner on API
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-api:${{ github.sha }}'
           format: 'table'
-          exit-code: '0' # Set to 1 later if you want builds to fail on vulnerabilities
+          exit-code: '0' 
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
-      - name: Push API Image
-        run: docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-api:${{ github.sha }}
+      - name: Push API Image Tags
+        # Pushes all tags (v1.x.x, latest, sha) simultaneously 
+        run: docker push --all-tags ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-api
 
-      # --- 2. Worker Image ---
+
+      # ==========================================
+      # 2. WORKER IMAGE
+      # ==========================================
+      - name: Extract Worker metadata
+        id: meta-worker
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-worker
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha
+            type=raw,value=${{ github.sha }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
       - name: Build Worker Image
         uses: docker/build-push-action@v5
         with:
@@ -90,7 +120,8 @@ jobs:
           file: ./app/worker/Dockerfile
           push: false
           load: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-worker:${{ github.sha }}
+          tags: ${{ steps.meta-worker.outputs.tags }}
+          labels: ${{ steps.meta-worker.outputs.labels }}
 
       - name: Run Trivy vulnerability scanner on Worker
         uses: aquasecurity/trivy-action@master
@@ -101,10 +132,24 @@ jobs:
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
 
-      - name: Push Worker Image
-        run: docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-worker:${{ github.sha }}
+      - name: Push Worker Image Tags
+        run: docker push --all-tags ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-worker
 
-      # --- 3. Frontend Image ---
+
+      # ==========================================
+      # 3. FRONTEND IMAGE
+      # ==========================================
+      - name: Extract Frontend metadata
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
+          tags: |
+            type=semver,pattern={{version}}
+            type=sha
+            type=raw,value=${{ github.sha }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
       - name: Build Frontend Image
         uses: docker/build-push-action@v5
         with:
@@ -112,7 +157,8 @@ jobs:
           file: ./app/frontend/Dockerfile
           push: false
           load: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
 
       - name: Run Trivy vulnerability scanner on Frontend
         uses: aquasecurity/trivy-action@master
@@ -123,5 +169,5 @@ jobs:
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
 
-      - name: Push Frontend Image
-        run: docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ github.sha }}
+      - name: Push Frontend Image Tags
+        run: docker push --all-tags ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend
