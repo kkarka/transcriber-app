@@ -71,7 +71,9 @@ MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
 ALLOWED_EXTENSIONS = (".mp4", ".mov", ".mkv")
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-redis_conn = Redis(host="redis", port=6379)
+# Pull REDIS_HOST from the environment
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+redis_conn = Redis(host=REDIS_HOST, port=6379)
 
 # -------------------------
 # ROOT

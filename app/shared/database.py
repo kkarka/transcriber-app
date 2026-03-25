@@ -9,10 +9,16 @@ from sqlalchemy.exc import OperationalError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Pulls from the environment variable set in docker-compose or kubernetes
+# Pull individual variables provided by Kubernetes, fallback to local defaults
+DB_USER = os.getenv("POSTGRES_USER", "kiran")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password123")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_DB = os.getenv("POSTGRES_DB", "transcription_db")
+
+# Build the connection string dynamically
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    "postgresql://kiran:password123@localhost:5432/transcription_db"
+    f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:5432/{DB_DB}"
 )
 
 # Configuration for stability

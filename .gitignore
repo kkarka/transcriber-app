@@ -35,6 +35,9 @@ uploads/
 *.mov
 *.avi
 
+# Ignore all files in uploads except the .gitkeep
+/uploads/*
+!/uploads/.gitkeep
 
 # ------------------------------
 # Node / React / Vite
