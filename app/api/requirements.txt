@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-multipart
+redis
+rq
+yt-dlp
+pydantic
+python-dotenv
+numpy<2
+sqlalchemy
+psycopg2-binary
+prometheus-fastapi-instrumentator>=6.1.1
+

@@ -1,0 +1,111 @@
+services:
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  db:
+    image: postgres:15-alpine
+    container_name: transcriber_db
+    environment:
+      - POSTGRES_USER=kiran
+      - POSTGRES_PASSWORD=password123
+      - POSTGRES_DB=transcription_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kiran -d transcription_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build:
+      context: ./app             
+      dockerfile: api/Dockerfile
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    environment:
+      - PYTHONPATH=/app:/shared
+      - REDIS_HOST=redis
+      - DATABASE_URL=postgresql://kiran:password123@db:5432/transcription_db
+    depends_on:
+      redis: { condition: service_healthy }
+      db: { condition: service_healthy }
+    volumes:
+      - ./app/api:/app
+      - ./uploads:/app/uploads
+      - ./app/shared:/shared:ro
+    healthcheck:
+      # Using a simpler python check that doesn't rely on localhost mapping as strictly
+      test: ["CMD", "python", "-c", "import socket; s = socket.socket(); s.connect(('127.0.0.1', 8000))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  worker:
+    build: 
+      context: ./app              
+      dockerfile: worker/Dockerfile
+    deploy:
+      replicas: 1  # CRITICAL: Prevents resource exhaustion on limited hardware/cloud
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app:/shared
+      - REDIS_HOST=redis
+      - DATABASE_URL=postgresql://kiran:password123@db:5432/transcription_db
+      - HF_HOME=/models/cache
+    depends_on:
+      redis: { condition: service_healthy }
+      db: { condition: service_healthy }
+    volumes:
+      - ./app/worker:/app
+      - ./uploads:/app/uploads
+      - whisper_models:/models
+      - ./app/shared:/shared:ro
+    # Simplified command to use the env variables
+    command: rq worker transcriptions --url redis://redis:6379 --path .
+
+  frontend:
+    build: 
+      context: ./app              
+      dockerfile: frontend/Dockerfile
+    env_file:
+      - ./app/frontend/.env.docker
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  gateway:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # IMPORTANT: Nginx needs to be able to see the uploads to serve them directly (Performance optimization)
+      - ./uploads:/www/uploads:ro
+    depends_on:
+      api: { condition: service_healthy }
+      frontend: { condition: service_healthy }
+
+volumes:
+  whisper_models:
+  postgres_data:

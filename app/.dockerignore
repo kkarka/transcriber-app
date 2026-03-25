@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+**/venv/
+**/.venv/
+
+# JavaScript / Frontend
+**/node_modules/
+**/dist/
+**/build/
+**/.next/
+
+# App Specific Data (The Heavy Stuff)
+**/uploads/
+**/models/
+**/*.mp4
+**/*.wav
+**/*.mkv
+
+# Environment & Secrets
+**/.env
+**/.env.*
