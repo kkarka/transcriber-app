@@ -48,6 +48,6 @@ RUN python -c "from faster_whisper import WhisperModel; WhisperModel('base', dev
 
 
 COPY --chown=appuser:appgroup worker /app
-COPY --chown=appuser:appgroup shared /shared
+COPY --chown=appuser:appgroup shared /app
 
 CMD ["rq", "worker", "transcriptions", "--path", "/app"]

@@ -34,7 +34,7 @@ RUN mkdir -p /app/uploads && chown appuser:appgroup /app/uploads
 
 COPY --chown=appuser:appgroup --from=builder /opt/venv /opt/venv
 COPY --chown=appuser:appgroup api /app
-COPY --chown=appuser:appgroup shared /shared
+COPY --chown=appuser:appgroup shared /app
 
 USER appuser
 
