@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+from urllib.parse import quote_plus
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.exc import OperationalError
@@ -15,10 +16,12 @@ DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password123")
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_DB = os.getenv("POSTGRES_DB", "transcription_db")
 
+ENCODED_PASS = quote_plus(DB_PASS)
+
 # Build the connection string dynamically
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:5432/{DB_DB}"
+    f"postgresql://{DB_USER}:{ENCODED_PASS}@{DB_HOST}:5432/{DB_DB}"
 )
 
 # Configuration for stability
