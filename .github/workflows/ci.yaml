@@ -104,3 +104,30 @@ jobs:
 
       - name: Push Image Tags
         run: docker push --all-tags ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
+  update-gitops:
+    name: Update GitOps Repository
+    # This ensures it only runs AFTER your Docker image is successfully pushed
+    needs: build-scan-push 
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') 
+    steps:
+      - name: Checkout GitOps Repository
+        uses: actions/checkout@v3
+        with:
+          repository: kkarka/transcriber-gitops 
+          token: ${{ secrets.GITOPS_PAT }} 
+
+      - name: Update Image Tag in values-dev.yaml
+        run: |
+          # 1. Strip the 'v' from your GitHub tag (e.g., turns 'v1.0.6' into '1.0.6')
+          VERSION=${GITHUB_REF_NAME#v}
+          
+          # 2. Use precise sed to find the 'image:' block and replace the 'tag:' line below it
+          sed -i "/image:/,/tag:/ s/tag: .*/tag: \"$VERSION\"/" kubernetes/helm/transcriber/values-dev.yaml
+          
+          # 3. Commit and push the changes back to GitHub
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add kubernetes/helm/transcriber/values-dev.yaml
+          git commit -m "chore: auto-update image tag to $VERSION [skip ci]"
+          git push
