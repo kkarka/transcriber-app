@@ -14,14 +14,14 @@ logger = logging.getLogger(__name__)
 DB_USER = os.getenv("POSTGRES_USER", "kiran")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password123")
 DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_DB = os.getenv("POSTGRES_DB", "transcription_db")
+DB_NAME = os.getenv("POSTGRES_DB", "transcription_db")
 
-ENCODED_PASS = quote_plus(DB_PASS)
+ENCODED_PASS = quote_plus(DB_PASSWORD)
 
 # Build the connection string dynamically
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    f"postgresql://{DB_USER}:{ENCODED_PASS}@{DB_HOST}:5432/{DB_DB}"
+    f"postgresql://{DB_USER}:{ENCODED_PASS}@{DB_HOST}:5432/{DB_NAME}"
 )
 
 # Configuration for stability
