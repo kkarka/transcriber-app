@@ -1,6 +1,7 @@
 import os
 import shutil
 import uuid
+import boto3
 
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -75,6 +76,10 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 redis_conn = Redis(host=REDIS_HOST, port=6379)
 
+STORAGE_MODE = os.getenv("STORAGE_MODE", "local")
+S3_BUCKET = os.getenv("S3_VIDEO_BUCKET_NAME")
+s3_client = boto3.client('s3')
+
 # -------------------------
 # ROOT
 # -------------------------
@@ -96,11 +101,27 @@ async def transcribe_video(
         raise HTTPException(status_code=400, detail="Unsupported file type")
 
     unique_filename = f"{uuid.uuid4()}_{filename}"
-    file_path = os.path.abspath(os.path.join(UPLOAD_DIR, unique_filename))
 
-    with open(file_path, "wb") as buffer:
-        while chunk := await file.read(1024 * 1024):
-            buffer.write(chunk)
+    # --- HYBRID STORAGE LOGIC ---
+    if STORAGE_MODE == "s3":
+        # Upload directly to S3 without saving a local file
+        try:
+            s3_client.upload_fileobj(file.file, S3_BUCKET, unique_filename)
+            file_identifier = f"s3://{S3_BUCKET}/{unique_filename}"
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"S3 Upload Failed: {str(e)}")
+    else:
+        # Standard Local Save
+        file_path = os.path.abspath(os.path.join(UPLOAD_DIR, unique_filename))
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        file_identifier = file_path
+
+    # file_path = os.path.abspath(os.path.join(UPLOAD_DIR, unique_filename))
+
+    # with open(file_path, "wb") as buffer:
+    #     while chunk := await file.read(1024 * 1024):
+    #         buffer.write(chunk)
             
     # 1. Create Single Source of Truth in Postgres
     new_job = models.TranscriptionJob(filename=filename, status=models.JobStatus.PENDING)
@@ -111,12 +132,12 @@ async def transcribe_video(
     # 2. Push to Redis queue, keeping the RQ job_id identical to the DB id
     job = transcription_queue.enqueue(
         "tasks.transcribe",
-        args=(new_job.id, file_path), # We now pass the DB ID to the worker!
+        args=(new_job.id, file_identifier), # We now pass the DB ID to the worker!
         job_id=new_job.id,
         job_timeout="30m"
     )
 
-    return {"job_id": new_job.id, "status": new_job.status.value, "message": "File processing queued"}
+    return {"job_id": new_job.id, "status": new_job.status.value, "message": "Queued successfully"}
 
 
 @app.post("/v1/transcribe-youtube", response_model=JobResponse)

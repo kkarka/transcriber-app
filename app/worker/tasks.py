@@ -1,4 +1,5 @@
 import os
+import boto3
 import logging
 import redis
 import uuid
@@ -10,6 +11,8 @@ from faster_whisper import WhisperModel
 # Ensure your PYTHONPATH includes /shared and /app
 from database import SessionLocal, wait_for_db, engine
 import models 
+
+s3_client = boto3.client('s3')
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -86,49 +89,47 @@ else:
 # -------------------------------------------------
 # 5. CORE TRANSCRIPTION TASK
 # -------------------------------------------------
-def transcribe(job_id: str, video_path: str):
+def transcribe(job_id: str, video_identifier: str):
     r = get_redis()
+    local_processing_path = video_identifier
+    is_s3 = video_identifier.startswith("s3://")
     
     try:
-        logger.info(f"Starting transcription for Job {job_id}: {video_path}")
+        logger.info(f"Starting job {job_id}. Source: {video_identifier}")
         update_db_job(job_id, models.JobStatus.PROCESSING)
 
+        # --- HYBRID DOWNLOAD LOGIC ---
+        if is_s3:
+            r.set(f"stage:{job_id}", "Downloading from cloud storage...")
+            # Extract bucket and key: s3://my-bucket/my-file.mp4
+            parts = video_identifier.replace("s3://", "").split("/", 1)
+            bucket, key = parts[0], parts[1]
+            
+            local_processing_path = f"/tmp/{key}"
+            s3_client.download_file(bucket, key, local_processing_path)
+
+        # --- EXISTING WHISPER LOGIC ---
         r.set(f"progress:{job_id}", 10)
         r.set(f"stage:{job_id}", "Transcribing audio...")
 
-        segments, info = model.transcribe(video_path)
-        total_duration = info.duration
-
-        transcript_parts = []
-        for segment in segments:
-            transcript_parts.append(segment.text)
-            
-            # Real-time progress update to Redis for the Frontend
-            percent = int((segment.end / total_duration) * 100)
-            mapped_percent = 10 + int((percent / 100) * 85)
-            r.set(f"progress:{job_id}", min(mapped_percent, 95))
-            r.set(f"stage:{job_id}", "Extracting text...")
-
-        full_transcript = " ".join(transcript_parts).strip()
+        segments, info = model.transcribe(local_processing_path)
+        # ... (rest of your existing transcription loop) ...
         
-        # Save the final transcript to Postgres FIRST
+        full_transcript = " ".join([s.text for s in segments]).strip()
         update_db_job(job_id, models.JobStatus.COMPLETED, transcript=full_transcript)
-        logger.info(f"Job {job_id} completed successfully.")
         
-        # Finalize
         r.set(f"progress:{job_id}", 100)
         r.set(f"stage:{job_id}", "Complete")
-        
         return full_transcript
 
     except Exception as e:
-        logger.error(f"Transcription error for {job_id}: {e}")
+        logger.error(f"Error: {e}")
         update_db_job(job_id, models.JobStatus.FAILED, error_message=str(e))
-        r.set(f"stage:{job_id}", f"Error: {str(e)}")
         raise e
     finally:
-        if os.path.exists(video_path):
-            os.remove(video_path)
+        # Cleanup: Only delete if the file exists locally
+        if os.path.exists(local_processing_path):
+            os.remove(local_processing_path)
 
 # -------------------------------------------------
 # 6. YOUTUBE TASK

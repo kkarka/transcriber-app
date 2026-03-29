@@ -69,6 +69,7 @@ Thumbs.db
 # ------------------------------
 .vscode/
 .idea/
+.ctxt
 
 # Whisper models
 models/

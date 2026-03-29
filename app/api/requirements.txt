@@ -10,4 +10,4 @@ numpy<2
 sqlalchemy
 psycopg2-binary
 prometheus-fastapi-instrumentator>=6.1.1
-
+boto3
