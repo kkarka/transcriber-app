@@ -34,7 +34,12 @@ async def lifespan(app: FastAPI):
         models.Base.metadata.create_all(bind=database.engine)
     yield
     # Anything below 'yield' runs during server shutdown
-app = FastAPI(title="Transcriber App", version="1.0.0", lifespan=lifespan)
+
+# Default to an empty string for local development
+API_PREFIX = os.getenv("API_PREFIX", "")
+
+# Pass the prefix to root_path
+app = FastAPI(title="Transcriber App", version="1.0.0", lifespan=lifespan, root_path=API_PREFIX)
 
 
 # -------------------------
