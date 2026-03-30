@@ -11,6 +11,44 @@ export function TranscriptionResult({ transcription, fileName, onStartOver }: Tr
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
+    // Try the modern Clipboard API (Requires HTTPS)
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(transcription);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+        return;
+      } catch (err) {
+        console.error("Modern copy failed, trying fallback", err);
+      }
+    }
+    
+    // Fallback for HTTP (Insecure context)
+    try {
+      const textArea = document.createElement("textarea");
+      textArea.value = transcription;
+      
+      // Ensure the textarea is off-screen but part of the DOM
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      textArea.style.top = "0";
+      document.body.appendChild(textArea);
+      
+      textArea.focus();
+      textArea.select();
+      
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      
+      if (successful) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (err) {
+      console.error("Fallback copy failed", err);
+    }
+  };
+    
     await navigator.clipboard.writeText(transcription);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);

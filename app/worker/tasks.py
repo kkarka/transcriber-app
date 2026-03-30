@@ -147,6 +147,7 @@ def transcribe_youtube_job(job_id: str, youtube_url: str):
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": output_tmpl,
+            "cookiefile": "/etc/secrets/cookies.txt",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "wav",
