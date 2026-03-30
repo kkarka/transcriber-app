@@ -152,7 +152,7 @@ def transcribe_youtube_job(job_id: str, youtube_url: str):
                 "preferredcodec": "wav",
                 "preferredquality": "192"
             }],
-            "quiet": True
+            "quiet": True,
             # --- Bypass YouTube Bot Detection ---
             "extractor_args": {
                 "youtube": {
