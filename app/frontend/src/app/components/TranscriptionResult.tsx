@@ -48,11 +48,6 @@ export function TranscriptionResult({ transcription, fileName, onStartOver }: Tr
       console.error("Fallback copy failed", err);
     }
   };
-    
-    await navigator.clipboard.writeText(transcription);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   const handleDownload = () => {
     const blob = new Blob([transcription], { type: "text/plain;charset=utf-8" });
@@ -125,3 +120,4 @@ export function TranscriptionResult({ transcription, fileName, onStartOver }: Tr
     </div>
   );
 }
+
