@@ -153,6 +153,12 @@ def transcribe_youtube_job(job_id: str, youtube_url: str):
                 "preferredquality": "192"
             }],
             "quiet": True
+            # --- Bypass YouTube Bot Detection ---
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "web"]
+                }
+            }
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
