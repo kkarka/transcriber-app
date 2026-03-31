@@ -169,9 +169,9 @@ export default function App() {
           <div className="flex items-center gap-3">
             <FileVideo className="w-8 h-8 text-primary" />
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">Video Transcription</h1>
+              <h1 className="text-2xl font-bold tracking-tight">Transcriber.Ai</h1>
               <p className="text-muted-foreground">
-                Upload a video to get instant transcription notes
+                Upload a video to get instant transcription & AI notes
               </p>
             </div>
           </div>
