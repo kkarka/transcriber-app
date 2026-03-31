@@ -39,6 +39,6 @@ export const checkStatus = async (jobId: string) => {
 };
 
 export const cancelJob = async (jobId: string) => {
-  const response = await axios.delete(`${API_BASE_URL}/status/${jobId}`);
+  const response = await axios.post(`${API_BASE_URL}/cancel/${jobId}`);
   return response.data;
 };

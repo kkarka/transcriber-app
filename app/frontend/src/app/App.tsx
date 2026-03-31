@@ -4,8 +4,7 @@ import { UploadSection } from "./components/UploadSection";
 import { ProcessingView } from "./components/ProcessingView";
 import { TranscriptionResult } from "./components/TranscriptionResult";
 import { ErrorDialog } from "./components/ErrorDialog";
-import { uploadVideo, checkStatus, cancelJob} from "../api/transcription";
-
+import { uploadVideo, checkStatus, cancelJob } from "../api/transcription";
 
 type AppState = "upload" | "processing" | "result";
 
@@ -20,6 +19,24 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [stage, setStage] = useState("");
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
+  // Video Preview State
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // Generate the preview URL whenever a new file is locked in
+  useEffect(() => {
+    if (!selectedFile) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(selectedFile);
+    setPreviewUrl(objectUrl);
+
+    // Clean up memory
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [selectedFile]);
 
   const handleStartTranscription = async (
     source: "upload",
@@ -43,6 +60,7 @@ export default function App() {
     }
 
     setFileName(data.name);
+    setSelectedFile(data); // Lock in the file for the video preview
 
     try {
       const job = await uploadVideo(data);
@@ -67,15 +85,12 @@ export default function App() {
   }, [progress]);
 
   const pollStatus = (jobId: string) => {
-
     if (pollingRef.current) {
       clearInterval(pollingRef.current);
     }
 
     pollingRef.current = setInterval(async () => {
-
       try {
-
         const status = await checkStatus(jobId);
 
         if (status.progress !== undefined) {
@@ -84,18 +99,13 @@ export default function App() {
 
         setStage(status.stage || "");
 
-
         if (status.status.toLowerCase() === "completed" || status.progress === 100) {
-
           if (pollingRef.current) clearInterval(pollingRef.current);
           setProgress(100);
           setIsFinalizing(true);
 
-          // FIX 1: Safely check multiple possible keys your Python API might be sending
-          const backendData = status as any;
           const finalText = status.transcription || status.result || status.text || "Transcription completed, but no text was returned.";
 
-          // FIX 2: Properly wait 500ms before changing the screen so the 100% bar is visible
           setTimeout(() => {
             setTranscription(finalText);
             setState("result");
@@ -103,19 +113,15 @@ export default function App() {
         }
 
         if (status.status === "failed") {
-
           if (pollingRef.current) clearInterval(pollingRef.current);
-
           setError("Transcription failed. Please try again.");
           setState("upload");
+          setSelectedFile(null);
         }
-
       } catch (error) {
-
         console.error("Polling error:", error);
         setError("Network error while checking transcription status.");
       }
-
     }, 3000);
   };
 
@@ -127,22 +133,21 @@ export default function App() {
     };
   }, []);
 
-    const handleStartOver = () => {
+  const handleStartOver = () => {
+    setState("upload");
+    setFileName("");
+    setTranscription("");
+    setJobId(null);
+    setProgress(0);
+    setIsFinalizing(false);
+    setSelectedFile(null); // Clear preview
 
-      setState("upload");
-      setFileName("");
-      setTranscription("");
-      setJobId(null);
-      setProgress(0);
-      setIsFinalizing(false);
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+  };
 
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-      }
-    };
-
-    const handleCancel = async () => {
-
+  const handleCancel = async () => {
     if (!jobId) return;
 
     await cancelJob(jobId);
@@ -154,33 +159,47 @@ export default function App() {
     setState("upload");
     setProgress(0);
     setIsFinalizing(false);
+    setSelectedFile(null); // Clear preview
   };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-
       <header className="border-b border-border bg-card">
         <div className="max-w-7xl mx-auto px-6 py-6">
           <div className="flex items-center gap-3">
-
             <FileVideo className="w-8 h-8 text-primary" />
-
             <div>
-              <h1>Video Transcription</h1>
+              <h1 className="text-2xl font-bold tracking-tight">Video Transcription</h1>
               <p className="text-muted-foreground">
                 Upload a video to get instant transcription notes
               </p>
             </div>
-
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-12 flex-grow">
+      <main className="max-w-7xl mx-auto px-6 py-12 flex-grow w-full">
+        
+        {/* Render the Video Preview when processing or viewing results */}
+        {previewUrl && state !== "upload" && (
+          <div className="mb-8 flex justify-center animate-in fade-in duration-500">
+            <div className="rounded-xl overflow-hidden border border-border shadow-sm max-w-3xl w-full bg-black">
+              <video
+                src={previewUrl}
+                controls
+                className="w-full h-auto max-h-[400px] object-contain"
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
+          </div>
+        )}
 
         {state === "upload" && (
-          <UploadSection onStartTranscription={handleStartTranscription} 
-            onError={(msg) => setError(msg)} />
+          <UploadSection 
+            onStartTranscription={handleStartTranscription} 
+            onError={(msg) => setError(msg)} 
+          />
         )}
 
         {state === "processing" && !isFinalizing && (
@@ -207,7 +226,6 @@ export default function App() {
             onStartOver={handleStartOver}
           />
         )}
-
       </main>
 
       <footer className="border-t border-border mt-auto py-6">
@@ -224,8 +242,6 @@ export default function App() {
           onClose={() => setError(null)}
         />
       )}
-
     </div>
   );
 }
-

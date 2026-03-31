@@ -15,12 +15,25 @@ from rq.command import send_stop_job_command
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from openai import AsyncOpenAI
 
 # Import your local modules
 from redis_queue import transcription_queue
 from database import engine, wait_for_db, Base
 import models
 import database
+
+from fastapi.responses import StreamingResponse
+import asyncio
+
+
+# Initialize the async client. 
+# It automatically picks up HUGGINGFACE_API_KEY from your environment.
+aclient = AsyncOpenAI(
+    api_key=os.getenv("HUGGINGFACE_API_KEY"),
+    base_url="https://router.huggingface.co/v1" # 
+)
+
 
 # -------------------------
 # DATABASE SETUP
@@ -56,6 +69,10 @@ class PreSignResponse(BaseModel):
 class StartTranscriptionRequest(BaseModel):
     job_id: str
     file_identifier: str
+
+class NotesRequest(BaseModel):
+    transcription: str
+
 
 # -------------------------
 # CORS CONFIG
@@ -215,6 +232,48 @@ def get_status(job_id: str, db: Session = Depends(database.get_db)):
         "stage": stage.decode('utf-8') if stage else "Initializing job...",
         "result": None
     }
+
+# -------------------------
+# Notes Generator Function
+# -------------------------
+async def real_llm_stream(transcription_text: str):
+    prompt = f"""
+    You are an expert executive assistant. Please read the following transcription 
+    and provide a beautifully formatted summary, key takeaways, and any action items.
+    Use Markdown formatting (bullet points, bold text, etc.).
+    
+    Transcription:
+    {transcription_text}
+    """
+    
+    try:
+        stream = await aclient.chat.completions.create(
+            # 2. Use a powerful, free Hugging Face model
+            model="meta-llama/Meta-Llama-3-8B-Instruct:novita", 
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            stream=True,
+            max_tokens=1000 # Good safety limit for the free tier
+        )
+        
+        async for chunk in stream:
+            if chunk.choices and len(chunk.choices) > 0:
+                content = chunk.choices[0].delta.content
+                if content is not None:
+                    yield content
+                
+    except Exception as e:
+        yield f"\n\n**Error connecting to AI:** {str(e)}"
+
+# Endpoint remains the same
+@app.post("/v1/notes/generate")
+async def generate_notes(request: NotesRequest):
+    return StreamingResponse(
+        real_llm_stream(request.transcription), 
+        media_type="text/event-stream"
+    )
 
 # -------------------------
 # CANCEL JOB (v1)
