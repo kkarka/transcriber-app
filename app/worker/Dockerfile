@@ -25,7 +25,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # Install runtime system dependencies (ffmpeg) and clean up apt cache!
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg nodejs \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 

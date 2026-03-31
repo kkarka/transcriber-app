@@ -6,7 +6,6 @@ redis
 rq
 av
 numpy<2
-yt-dlp
 sqlalchemy
 psycopg2-binary
 boto3

@@ -4,8 +4,8 @@ import { UploadSection } from "./components/UploadSection";
 import { ProcessingView } from "./components/ProcessingView";
 import { TranscriptionResult } from "./components/TranscriptionResult";
 import { ErrorDialog } from "./components/ErrorDialog";
-import { uploadVideo, checkStatus, uploadYoutube } from "../api/transcription";
-import { cancelJob } from "../api/transcription";
+import { uploadVideo, checkStatus, cancelJob} from "../api/transcription";
+
 
 type AppState = "upload" | "processing" | "result";
 
@@ -22,72 +22,36 @@ export default function App() {
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleStartTranscription = async (
-    source: "upload" | "youtube",
-    data: File | string
+    source: "upload",
+    data: File
   ) => {
+    setProgress(0);
+    setDisplayProgress(0);
+    setStage("Preparing video...");
 
-    // Reset previous job state
-      setProgress(0);
-      setDisplayProgress(0);
-      setStage("Preparing video...");
+    const allowedTypes = [
+      "video/mp4",
+      "video/quicktime",
+      "video/x-matroska",
+      "video/x-msvideo",
+      "video/webm"
+    ];
 
-    if (source === "upload" && data instanceof File) {
-
-      const allowedTypes = [
-        "video/mp4",
-        "video/quicktime",
-        "video/x-matroska",
-        "video/x-msvideo",
-        "video/webm"
-      ];
-
-      if (!allowedTypes.includes(data.type)) {
-        setError(
-          "Unsupported file format. Please upload MP4, MOV, MKV, AVI, or WEBM."
-        );
-        return;
-      }
-
-      if (data.size > 500 * 1024 * 1024) {
-        setError("File too large. Maximum allowed size is 500MB.");
-        return;
-      }
-
-      setFileName(data.name);
-
-      try {
-        const job = await uploadVideo(data);
-
-        setJobId(job.job_id);
-        setState("processing");
-
-        pollStatus(job.job_id);
-
-      } catch (err) {
-
-        console.error("Upload failed", err);
-        setError("Upload failed. Please try again.");
-      }
+    if (!allowedTypes.includes(data.type)) {
+      setError("Unsupported file format. Please upload MP4, MOV, MKV, AVI, or WEBM.");
+      return;
     }
 
-    if (source === "youtube" && typeof data === "string") {
+    setFileName(data.name);
 
-      setFileName("YouTube Video");
-
-      try {
-
-        const job = await uploadYoutube(data);
-
-        setJobId(job.job_id);
-        setState("processing");
-
-        pollStatus(job.job_id);
-
-      } catch (err) {
-
-        console.error("YouTube transcription failed", err);
-        setError("Failed to process YouTube video. Please check the URL.");
-      }
+    try {
+      const job = await uploadVideo(data);
+      setJobId(job.job_id);
+      setState("processing");
+      pollStatus(job.job_id);
+    } catch (err) {
+      console.error("Upload failed", err);
+      setError("Upload failed. Please try again.");
     }
   };
 
@@ -124,16 +88,6 @@ export default function App() {
         if (status.status.toLowerCase() === "completed" || status.progress === 100) {
 
           if (pollingRef.current) clearInterval(pollingRef.current);
-         
-          // Force a small delay to ensure the progress bar looks "finished" to the user
-          // setTimeout(() => {
-          // setTranscription(status.result || "");
-          // setState("result");
-          //  }, 500);
-
-          // setProgress(100);
-          // setTranscription(status.result || "");
-          // setState("result");
           setProgress(100);
           setIsFinalizing(true);
 
@@ -214,7 +168,7 @@ export default function App() {
             <div>
               <h1>Video Transcription</h1>
               <p className="text-muted-foreground">
-                Upload a video or paste a YouTube URL to get instant transcription notes
+                Upload a video to get instant transcription notes
               </p>
             </div>
 

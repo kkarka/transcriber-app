@@ -1,73 +1,44 @@
-const API_BASE = "/api/v1";
+import axios from 'axios';
 
-export interface UploadResponse {
-  job_id: string;
-  status: string;
-}
+const API_BASE_URL = '/api/v1';
 
-export interface StatusResponse {
-  status: "processing" | "completed" | "failed";
-  progress: number;
-  result?: string;
-  stage: string;
-  transcription?: string; 
-  text?: string;
-}
-
-export async function uploadVideo(file: File): Promise<UploadResponse> {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response = await fetch(`${API_BASE}/transcribe`, {
-    method: "POST",
-    body: formData
+export const uploadVideo = async (file: File) => {
+  // 1. Ask the API where to put the file
+  const presignResponse = await axios.post(`${API_BASE_URL}/upload/presign`, {
+    filename: file.name,
+    content_type: file.type
   });
+  
+  
+  let { upload_url, job_id, file_identifier } = presignResponse.data;
 
-  if (!response.ok) {
-    throw new Error("Upload failed");
+  if (upload_url.startsWith('http')) {
+      const urlObj = new URL(upload_url);
+      upload_url = urlObj.pathname.replace('/api/api/', '/api/');
   }
 
-  return response.json();
-}
-
-export async function uploadYoutube(url: string) {
-
-  const response = await fetch(`${API_BASE}/transcribe-youtube`, {
-    method: "POST",
+  // 2. PUT the raw file to whatever URL the API provided
+  await axios.put(upload_url, file, {
     headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ url })
+      'Content-Type': file.type,
+    }
   });
 
-  if (!response.ok) {
-    throw new Error("YouTube transcription failed");
-  }
+  // 3. Tell the API the upload is finished
+  const startResponse = await axios.post(`${API_BASE_URL}/transcribe/start`, {
+    job_id: job_id,
+    file_identifier: file_identifier
+  });
 
-  return response.json();
-}
+  return startResponse.data;
+};
 
+export const checkStatus = async (jobId: string) => {
+  const response = await axios.get(`${API_BASE_URL}/status/${jobId}`);
+  return response.data;
+};
 
-export async function checkStatus(jobId: string): Promise<StatusResponse> {
-  const response = await fetch(`${API_BASE}/status/${jobId}`);
-
-  if (!response.ok) {
-    throw new Error("Status check failed");
-  }
-
-  return response.json();
-}
-
-
-export async function cancelJob(jobId: string) {
-
-  const response = await fetch(
-    `${API_BASE}/cancel/${jobId}`,
-    {
-      method: "POST"
-    }
-  );
-
-  return response.json();
-}
-
+export const cancelJob = async (jobId: string) => {
+  const response = await axios.delete(`${API_BASE_URL}/status/${jobId}`);
+  return response.data;
+};

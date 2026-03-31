@@ -2,8 +2,7 @@ import os
 import boto3
 import logging
 import redis
-import uuid
-import yt_dlp
+from urllib.parse import urlparse
 from rq import get_current_job
 from faster_whisper import WhisperModel
 
@@ -76,6 +75,7 @@ def update_db_job(job_id: str, status: models.JobStatus, transcript: str = None,
 os.makedirs("/models", exist_ok=True)
 
 if os.getenv("ENV") != "testing":
+    logger.info("Loading Faster-Whisper model into memory...")
     # This will download the model to /models on the first run
     model = WhisperModel(
         "base",
@@ -83,11 +83,12 @@ if os.getenv("ENV") != "testing":
         compute_type="int8",
         download_root="/models"
     )
+    logger.info("Model loaded successfully.")
 else:
     model = None
 
 # -------------------------------------------------
-# 5. CORE TRANSCRIPTION TASK
+# 5. CORE TRANSCRIPTION TASK (HYBRID S3/LOCAL)
 # -------------------------------------------------
 def transcribe(job_id: str, video_identifier: str):
     r = get_redis()
@@ -98,78 +99,69 @@ def transcribe(job_id: str, video_identifier: str):
         logger.info(f"Starting job {job_id}. Source: {video_identifier}")
         update_db_job(job_id, models.JobStatus.PROCESSING)
 
-        # --- HYBRID DOWNLOAD LOGIC ---
+        # ==========================================
+        # PHASE 1: FETCH THE FILE
+        # ==========================================
         if is_s3:
-            r.set(f"stage:{job_id}", "Downloading from cloud storage...")
-            # Extract bucket and key: s3://my-bucket/my-file.mp4
-            parts = video_identifier.replace("s3://", "").split("/", 1)
-            bucket, key = parts[0], parts[1]
+            r.set(f"stage:{job_id}", "Downloading massive file from AWS S3...")
+            r.set(f"progress:{job_id}", 10)
             
-            local_processing_path = f"/tmp/{key}"
+            # Extract bucket and key: s3://my-bucket/my-file.mp4
+            parsed = urlparse(video_identifier)
+            bucket = parsed.netloc
+            key = parsed.path.lstrip('/')
+            
+            # Create a safe, temporary local path to hold the S3 download
+            ext = key.split('.')[-1]
+            local_processing_path = f"/tmp/{job_id}.{ext}"
+            
+            logger.info(f"Downloading {key} from bucket {bucket} to {local_processing_path}...")
             s3_client.download_file(bucket, key, local_processing_path)
+            
+        else:
+            r.set(f"stage:{job_id}", "Locating local file...")
+            r.set(f"progress:{job_id}", 10)
+            if not os.path.exists(local_processing_path):
+                raise FileNotFoundError(f"Local file not found: {local_processing_path}")
 
-        # --- EXISTING WHISPER LOGIC ---
-        r.set(f"progress:{job_id}", 10)
+        # ==========================================
+        # PHASE 2: AI TRANSCRIPTION
+        # ==========================================
+        r.set(f"progress:{job_id}", 30)
         r.set(f"stage:{job_id}", "Transcribing audio...")
 
-        segments, info = model.transcribe(local_processing_path)
-        # ... (rest of your existing transcription loop) ...
+        segments, info = model.transcribe(local_processing_path, beam_size=5)
         
-        full_transcript = " ".join([s.text for s in segments]).strip()
+        transcription_text = ""
+        for segment in segments:
+            transcription_text += segment.text + " "
+
+        full_transcript = transcription_text.strip()
+
+        # ==========================================
+        # PHASE 3: SAVE TO POSTGRES
+        # ==========================================
+        r.set(f"stage:{job_id}", "Saving results to Database...")
+        r.set(f"progress:{job_id}", 95)
+        
         update_db_job(job_id, models.JobStatus.COMPLETED, transcript=full_transcript)
         
         r.set(f"progress:{job_id}", 100)
         r.set(f"stage:{job_id}", "Complete")
+        
         return full_transcript
 
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Error during transcription: {e}")
         update_db_job(job_id, models.JobStatus.FAILED, error_message=str(e))
+        r.set(f"stage:{job_id}", "Failed")
         raise e
+        
     finally:
-        # Cleanup: Only delete if the file exists locally
-        if os.path.exists(local_processing_path):
+        # ==========================================
+        # PHASE 4: CLEANUP (CRITICAL DEVOPS STEP)
+        # ==========================================
+        # ONLY delete if it was downloaded from S3 to a temporary folder!
+        if is_s3 and os.path.exists(local_processing_path):
             os.remove(local_processing_path)
-
-# -------------------------------------------------
-# 6. YOUTUBE TASK
-# -------------------------------------------------
-def transcribe_youtube_job(job_id: str, youtube_url: str):
-    r = get_redis()
-    temp_id = str(uuid.uuid4())
-    output_tmpl = os.path.join("/app/uploads", f"{temp_id}.%(ext)s")
-
-    try:
-        update_db_job(job_id, models.JobStatus.PROCESSING)
-        r.set(f"progress:{job_id}", 5)
-        r.set(f"stage:{job_id}", "Downloading from YouTube...")
-
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": output_tmpl,
-            "cookiefile": "/etc/secrets/cookies.txt",
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav",
-                "preferredquality": "192"
-            }],
-            "quiet": True,
-            # --- Bypass YouTube Bot Detection ---
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android", "web"]
-                }
-            }
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([youtube_url])
-
-        audio_path = output_tmpl.replace("%(ext)s", "wav")
-        return transcribe(job_id, audio_path)
-
-    except Exception as e:
-        logger.error(f"YouTube job failed: {e}")
-        update_db_job(job_id, models.JobStatus.FAILED, error_message=f"YouTube Error: {str(e)}")
-        r.set(f"stage:{job_id}", "Download failed")
-        raise e
+            logger.info(f"Cleaned up temporary S3 download: {local_processing_path}")

@@ -4,18 +4,19 @@
 
 # Python
 **/__pycache__/
-**/*.pyc
-**/*.pyo
-**/*.pyd
+**/*.py[cod]
 **/.pytest_cache/
 **/venv/
 **/.venv/
+.python-version
 
 # JavaScript / Frontend
 **/node_modules/
 **/dist/
 **/build/
 **/.next/
+package-lock.json
+yarn.lock
 
 # App Specific Data (The Heavy Stuff)
 **/uploads/
@@ -23,7 +24,18 @@
 **/*.mp4
 **/*.wav
 **/*.mkv
+**/*.tmp
 
 # Environment & Secrets
 **/.env
 **/.env.*
+.env
+**/secrets/
+**/*.pem
+**/*.key
+
+# IDEs & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
