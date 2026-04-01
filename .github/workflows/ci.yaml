@@ -104,7 +104,7 @@ jobs:
       - name: Checkout GitOps Repository
         uses: actions/checkout@v4
         with:
-          repository: kkarka/transcriber-gitops 
+          repository: kkarka/transcriber-iac
           token: ${{ secrets.GITOPS_PAT }} 
 
       - name: Update Global Image Tag
