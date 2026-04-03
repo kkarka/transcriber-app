@@ -25,7 +25,7 @@ import database
 
 from fastapi.responses import StreamingResponse
 import asyncio
-
+from fastapi import APIRouter
 
 # Initialize the async client. 
 # It automatically picks up HUGGINGFACE_API_KEY from your environment.
@@ -45,9 +45,10 @@ async def lifespan(app: FastAPI):
     yield
 
 # Default to an empty string for local development
+api_router = APIRouter(prefix="/api")
 API_PREFIX = os.getenv("API_PREFIX", "")
 
-app = FastAPI(title="Transcriber App", version="1.0.0", lifespan=lifespan, root_path=API_PREFIX)
+app = FastAPI(title="Transcriber App", version="1.0.0", lifespan=lifespan)
 
 # -------------------------
 # METRICS (PROMETHEUS)
@@ -98,20 +99,22 @@ REDIS_HOST = os.getenv("REDIS_HOST", "redis-master")
 redis_conn = Redis(host=REDIS_HOST, port=6379)
 
 STORAGE_MODE = os.getenv("STORAGE_MODE", "local")
+if not STORAGE_MODE:
+    raise RuntimeError("STORAGE_MODE must be set")
 S3_BUCKET = os.getenv("S3_VIDEO_BUCKET_NAME")
 s3_client = boto3.client('s3') if STORAGE_MODE == "s3" else None
 
 # -------------------------
 # ROOT
 # -------------------------
-@app.get("/")
+@api_router.get("/")
 def read_root():
     return {"message": "Transcription API running"}
 
 # -------------------------
 # HEALTH CHECK
 # -------------------------
-@app.get("/health")
+@api_router.get("/health")
 def health():
     return {"status": "ok"}
 
@@ -119,7 +122,7 @@ def health():
 # -------------------------
 # STEP 1: GENERATE UPLOAD URL
 # -------------------------
-@app.post("/v1/upload/presign", response_model=PreSignResponse)
+@api_router.post("/v1/upload/presign", response_model=PreSignResponse)
 def generate_upload_url(
     request: PreSignRequest, 
     api_req: Request, 
@@ -156,7 +159,7 @@ def generate_upload_url(
     else:
         # Local Dev: Give React a URL pointing back to this local server
         base_url = str(api_req.base_url).rstrip("/")
-        upload_url = f"{base_url}{API_PREFIX}/v1/upload/local/{new_job.id}"
+        upload_url = f"{base_url}/api/v1/upload/local/{new_job.id}"
         file_identifier = os.path.abspath(os.path.join(UPLOAD_DIR, unique_filename))
 
     return {
@@ -168,7 +171,7 @@ def generate_upload_url(
 # -------------------------
 # STEP 1.5: LOCAL DEV FILE CATCHER
 # -------------------------
-@app.put("/v1/upload/local/{job_id}")
+@api_router.put("/v1/upload/local/{job_id}")
 async def local_dev_upload(job_id: str, request: Request, db: Session = Depends(database.get_db)):
     """This endpoint is ONLY used during local development to catch the raw file PUT."""
     if STORAGE_MODE != "local":
@@ -191,7 +194,7 @@ async def local_dev_upload(job_id: str, request: Request, db: Session = Depends(
 # -------------------------
 # STEP 2: START TRANSCRIPTION
 # -------------------------
-@app.post("/v1/transcribe/start")
+@api_router.post("/v1/transcribe/start")
 def start_transcription(
     request: StartTranscriptionRequest,
     db: Session = Depends(database.get_db)
@@ -208,7 +211,8 @@ def start_transcription(
         "tasks.transcribe",
         args=(db_job.id, request.file_identifier),
         job_id=str(db_job.id),
-        job_timeout="2h" # Generous timeout for massive files
+        job_timeout="2h", # Generous timeout for massive files
+        retry=Retry(max=3, interval=[10, 30, 60])
     )
 
     return {"status": "processing", "job_id": str(db_job.id)}
@@ -216,7 +220,7 @@ def start_transcription(
 # -------------------------
 # JOB STATUS (v1)
 # -------------------------
-@app.get("/v1/status/{job_id}")
+@api_router.get("/v1/status/{job_id}")
 def get_status(job_id: str, db: Session = Depends(database.get_db)):
     db_job = db.query(models.TranscriptionJob).filter(models.TranscriptionJob.id == job_id).first()
     
@@ -277,7 +281,7 @@ async def real_llm_stream(transcription_text: str):
         yield f"\n\n**Error connecting to AI:** {str(e)}"
 
 # Endpoint remains the same
-@app.post("/v1/notes/generate")
+@api_router.post("/v1/notes/generate")
 async def generate_notes(request: NotesRequest):
     return StreamingResponse(
         real_llm_stream(request.transcription), 
@@ -287,7 +291,7 @@ async def generate_notes(request: NotesRequest):
 # -------------------------
 # CANCEL JOB (v1)
 # -------------------------
-@app.post("/v1/cancel/{job_id}")
+@api_router.post("/v1/cancel/{job_id}")
 def cancel_job(job_id: str, db: Session = Depends(database.get_db)):
     db_job = db.query(models.TranscriptionJob).filter(models.TranscriptionJob.id == job_id).first()
     if not db_job:
@@ -303,3 +307,5 @@ def cancel_job(job_id: str, db: Session = Depends(database.get_db)):
         pass 
 
     return {"status": "cancelled", "job_id": job_id}
+
+app.include_router(api_router)

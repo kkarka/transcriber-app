@@ -116,7 +116,10 @@ def transcribe(job_id: str, video_identifier: str):
             local_processing_path = f"/tmp/{job_id}.{ext}"
             
             logger.info(f"Downloading {key} from bucket {bucket} to {local_processing_path}...")
-            s3_client.download_file(bucket, key, local_processing_path)
+            try:
+                s3_client.download_file(bucket, key, local_processing_path)
+            except Exception as e:
+                raise RuntimeError(f"S3 download failed: {e}")
             
         else:
             r.set(f"stage:{job_id}", "Locating local file...")
