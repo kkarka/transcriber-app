@@ -123,15 +123,18 @@ def health():
 @app.get("/ready")
 def ready():
     try:
-        # DB check
+        #  Proper DB check
         db = next(database.get_db())
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
+        db.close()
 
-        # Redis check
+        #  Redis check
         redis_conn.ping()
 
         return {"status": "ready"}
-    except Exception:
+
+    except Exception as e:
+        print(f"Readiness failed: {e}") 
         raise HTTPException(status_code=503, detail="Not ready")
 
 
