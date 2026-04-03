@@ -109,6 +109,14 @@ def read_root():
     return {"message": "Transcription API running"}
 
 # -------------------------
+# HEALTH CHECK
+# -------------------------
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+# -------------------------
 # STEP 1: GENERATE UPLOAD URL
 # -------------------------
 @app.post("/v1/upload/presign", response_model=PreSignResponse)
