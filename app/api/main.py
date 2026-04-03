@@ -12,6 +12,7 @@ from redis import Redis
 from rq.job import Job
 from rq.exceptions import NoSuchJobError
 from rq.command import send_stop_job_command
+from sqlalchemy import text
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -123,18 +124,20 @@ def health():
 @app.get("/ready")
 def ready():
     try:
-        #  Proper DB check
-        db = next(database.get_db())
-        db.execute(text("SELECT 1"))
-        db.close()
+        db_gen = database.get_db()
+        db = next(db_gen)
 
-        #  Redis check
+        try:
+            db.execute(text("SELECT 1"))
+        finally:
+            db.close()
+
         redis_conn.ping()
 
         return {"status": "ready"}
 
     except Exception as e:
-        print(f"Readiness failed: {e}") 
+        print(f"Readiness failed: {e}")
         raise HTTPException(status_code=503, detail="Not ready")
 
 
