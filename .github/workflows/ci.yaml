@@ -2,10 +2,10 @@ name: CI/CD Security & Build Pipeline
 
 on:
   push:
-    branches: [ "main", "develop" ]
-    tags: [ "v*.*.*" ]
+    branches: ["main", "develop"]
+    tags: ["v*.*.*"]
   pull_request:
-    branches: [ "main", "develop" ]
+    branches: ["main", "develop"]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'python', 'javascript' ]
+        language: ["python", "javascript"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,16 +41,16 @@ jobs:
 
   build-scan-push:
     name: Build, Trivy Scan, and Push
-    needs: codeql-scan 
+    needs: codeql-scan
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write 
+      packages: write
     strategy:
       fail-fast: false
       matrix:
         service: [api, worker, frontend]
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -71,9 +71,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
           tags: |
+            type=sha,prefix=${{ matrix.service }}-
             type=semver,pattern={{version}}
-            type=sha
-            type=raw,value=${{ github.sha }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and Push Docker Image
@@ -90,38 +89,47 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ github.sha }}'
-          format: 'table'
-          exit-code: '0' # Switch to '1' later to enforce security breaks
+          image-ref: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ matrix.service }}-${{ github.sha }}"
+          format: "table"
+          exit-code: "0" # Switch to '1' later to enforce security breaks
           ignore-unfixed: true
-          severity: 'CRITICAL,HIGH'
+          severity: "CRITICAL,HIGH"
 
   update-gitops:
     name: Update GitOps Repository
-    needs: build-scan-push 
+    needs: build-scan-push
     runs-on: ubuntu-latest
     steps:
       - name: Checkout GitOps Repository
         uses: actions/checkout@v4
         with:
           repository: kkarka/transcriber-iac
-          token: ${{ secrets.GITOPS_PAT }} 
+          token: ${{ secrets.GITOPS_PAT }}
 
-      - name: Update Global Image Tag
+      - name: Install yq
         run: |
-          # Fallback: Use the short SHA if this isn't a version tag push
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Update Image Tags (Microservices)
+        run: |
+          # Determine version
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF_NAME#v}
           else
             VERSION=$(echo ${{ github.sha }} | cut -c1-7)
           fi
-          
-          # Use yq to update the value
-          yq -i ".image.tag = \"$VERSION\"" kubernetes/helm/transcriber/values-dev.yaml
-          
-          # 3. Commit and Push
+
+          VALUES_FILE="app/helm/transcriber/values-dev.yaml"
+
+          # Update all services
+          yq -i ".frontend.tag = \"frontend-$VERSION\"" $VALUES_FILE
+          yq -i ".api.tag = \"api-$VERSION\"" $VALUES_FILE
+          yq -i ".worker.tag = \"worker-$VERSION\"" $VALUES_FILE
+
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
-          git add kubernetes/helm/transcriber/values-dev.yaml
-          git commit -m "chore: auto-update global image tag to $VERSION [skip ci]"
+
+          git add $VALUES_FILE
+          git commit -m "chore: update image tags to $VERSION [skip ci]" || echo "No changes"
           git push
