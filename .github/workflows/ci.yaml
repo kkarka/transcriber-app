@@ -90,7 +90,8 @@ jobs:
         id: vars
         run: |
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
-            echo "TAG=${{ matrix.service }}-${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+            VERSION=${GITHUB_REF_NAME#v}
+            echo "TAG=${{ matrix.service }}-$VERSION" >> $GITHUB_OUTPUT
           else
             SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
             echo "TAG=${{ matrix.service }}-dev-$SHORT_SHA" >> $GITHUB_OUTPUT
@@ -104,6 +105,7 @@ jobs:
           exit-code: "0" # Switch to '1' later to enforce security breaks
           ignore-unfixed: true
           severity: "CRITICAL,HIGH"
+          timeout: "5m"
 
   update-gitops:
     name: Update GitOps Repository
@@ -127,7 +129,7 @@ jobs:
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             VERSION=$GITHUB_REF_NAME
           else
-            VERSION="dev-${{ github.sha }}"
+            VERSION="dev-$(echo ${{ github.sha }} | cut -c1-7)"
           fi
 
           VALUES_FILE="app/helm/transcriber/values-dev.yaml"
