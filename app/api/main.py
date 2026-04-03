@@ -93,7 +93,8 @@ ALLOWED_EXTENSIONS = (".mp4", ".mov", ".mkv", ".webm", ".avi")
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+# REDIS_HOST = os.getenv("REDIS_HOST", "localhost") # Default to localhost for local dev, but in Kubernetes it should be set to 'redis-master' as per the redis-setup.yaml
+REDIS_HOST = os.getenv("REDIS_HOST", "redis-master")
 redis_conn = Redis(host=REDIS_HOST, port=6379)
 
 STORAGE_MODE = os.getenv("STORAGE_MODE", "local")

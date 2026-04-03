@@ -35,7 +35,7 @@ _redis_client = None
 def get_redis():
     global _redis_client
     if _redis_client is None:
-        host = os.getenv("REDIS_HOST", "redis")
+        host = os.getenv("REDIS_HOST", "redis-master") # Default to 'redis-master' for Kubernetes, fallback to localhost
         _redis_client = redis.StrictRedis(
             host=host, 
             port=6379, 
