@@ -71,9 +71,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
           tags: |
-            type=sha,prefix=${{ matrix.service }}-
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}},prefix=${{ matrix.service }}-
+            type=raw,value=${{ matrix.service }}-dev-{{sha}},enable=${{ github.ref_type == 'branch' }}
+            type=raw,value=${{ matrix.service }}-latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
@@ -86,10 +86,20 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
+      - name: Set image tag
+        id: vars
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            echo "TAG=${{ matrix.service }}-${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          else
+            SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
+            echo "TAG=${{ matrix.service }}-dev-$SHORT_SHA" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ matrix.service }}-${{ github.sha }}"
+          image-ref: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ steps.vars.outputs.TAG }}"
           format: "table"
           exit-code: "0" # Switch to '1' later to enforce security breaks
           ignore-unfixed: true
@@ -115,9 +125,9 @@ jobs:
         run: |
           # Determine version
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
-            VERSION=${GITHUB_REF_NAME#v}
+            VERSION=$GITHUB_REF_NAME
           else
-            VERSION=$(echo ${{ github.sha }} | cut -c1-7)
+            VERSION="dev-${{ github.sha }}"
           fi
 
           VALUES_FILE="app/helm/transcriber/values-dev.yaml"
