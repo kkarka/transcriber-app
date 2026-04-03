@@ -65,15 +65,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
-          tags: |
-            type=semver,pattern={{version}},prefix=${{ matrix.service }}-
-            type=raw,value=${{ matrix.service }}-dev-{{sha}},enable=${{ github.ref_type == 'branch' }}
-            type=raw,value=${{ matrix.service }}-latest,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Extract version
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate tags
+        id: tags
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          SERVICE=${{ matrix.service }}
+
+          echo "TAG=${SERVICE}-${VERSION}" >> $GITHUB_OUTPUT
+
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "EXTRA_TAG=${SERVICE}-latest" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
@@ -81,26 +92,16 @@ jobs:
           context: ./app
           file: ./app/${{ matrix.service }}/Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ steps.tags.outputs.TAG }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ steps.tags.outputs.EXTRA_TAG }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
-
-      - name: Set image tag
-        id: vars
-        run: |
-          if [[ $GITHUB_REF == refs/tags/v* ]]; then
-            VERSION=${GITHUB_REF_NAME#v}
-            echo "TAG=${{ matrix.service }}-$VERSION" >> $GITHUB_OUTPUT
-          else
-            SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
-            echo "TAG=${{ matrix.service }}-dev-$SHORT_SHA" >> $GITHUB_OUTPUT
-          fi
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ steps.vars.outputs.TAG }}"
+          image-ref: "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ steps.tags.outputs.TAG }}"
           format: "table"
           exit-code: "0" # Switch to '1' later to enforce security breaks
           ignore-unfixed: true
@@ -127,7 +128,7 @@ jobs:
         run: |
           # Determine version
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
-            VERSION=$GITHUB_REF_NAME
+            VERSION=${GITHUB_REF_NAME#v}
           else
             VERSION="dev-$(echo ${{ github.sha }} | cut -c1-7)"
           fi
