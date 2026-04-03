@@ -26,6 +26,7 @@ import database
 from fastapi.responses import StreamingResponse
 import asyncio
 from fastapi import APIRouter
+from rq import Retry
 
 # Initialize the async client. 
 # It automatically picks up HUGGINGFACE_API_KEY from your environment.
@@ -46,7 +47,6 @@ async def lifespan(app: FastAPI):
 
 # Default to an empty string for local development
 api_router = APIRouter(prefix="/api")
-health_router = APIRouter()
 
 API_PREFIX = os.getenv("API_PREFIX", "")
 
@@ -101,8 +101,8 @@ REDIS_HOST = os.getenv("REDIS_HOST", "redis-master")
 redis_conn = Redis(host=REDIS_HOST, port=6379)
 
 STORAGE_MODE = os.getenv("STORAGE_MODE", "local")
-if not STORAGE_MODE:
-    raise RuntimeError("STORAGE_MODE must be set")
+if STORAGE_MODE not in ["local", "s3"]:
+    raise RuntimeError("Invalid STORAGE_MODE")
 S3_BUCKET = os.getenv("S3_VIDEO_BUCKET_NAME")
 s3_client = boto3.client('s3') if STORAGE_MODE == "s3" else None
 
@@ -116,16 +116,25 @@ def read_root():
 # -------------------------
 # HEALTH CHECK
 # -------------------------
-@health_router.get("/health")
+@app.get("/health")
 def health():
     return {"status": "ok"}
 
 @app.get("/ready")
 def ready():
-    # check DB + Redis
-    return {"status": "ready"}
-    
-app.include_router(health_router)
+    try:
+        # DB check
+        db = next(database.get_db())
+        db.execute("SELECT 1")
+
+        # Redis check
+        redis_conn.ping()
+
+        return {"status": "ready"}
+    except Exception:
+        raise HTTPException(status_code=503, detail="Not ready")
+
+
 
 # -------------------------
 # STEP 1: GENERATE UPLOAD URL
