@@ -3,31 +3,32 @@ import axios from 'axios';
 const API_BASE_URL = '/api/v1';
 
 export const uploadVideo = async (file: File) => {
-  // 1. Ask the API where to put the file
-  const presignResponse = await axios.post(`${API_BASE_URL}/upload/presign`, {
+  const presignResponse = await axios.post(`/api/v1/upload/presign`, {
     filename: file.name,
     content_type: file.type
   });
-  
-  
-  let { upload_url, job_id, file_identifier } = presignResponse.data;
 
-  if (upload_url.startsWith('http')) {
-      const urlObj = new URL(upload_url);
-      upload_url = urlObj.pathname.replace('/api/api/', '/api/');
+  const { upload_url, job_id, file_identifier } = presignResponse.data;
+
+  // 🔥 KEY LOGIC
+  if (upload_url.startsWith("http")) {
+    // ✅ S3 MODE → direct upload
+    await axios.put(upload_url, file, {
+      headers: { "Content-Type": file.type }
+    });
+  } else {
+    // ✅ LOCAL MODE → upload via API
+    const formData = new FormData();
+    formData.append("file", file);
+
+    await axios.post(`/api/v1/upload/local`, formData, {
+      headers: { "Content-Type": "multipart/form-data" }
+    });
   }
 
-  // 2. PUT the raw file to whatever URL the API provided
-  await axios.put(upload_url, file, {
-    headers: {
-      'Content-Type': file.type,
-    }
-  });
-
-  // 3. Tell the API the upload is finished
-  const startResponse = await axios.post(`${API_BASE_URL}/transcribe/start`, {
-    job_id: job_id,
-    file_identifier: file_identifier
+  const startResponse = await axios.post(`/api/v1/transcribe/start`, {
+    job_id,
+    file_identifier,
   });
 
   return startResponse.data;
