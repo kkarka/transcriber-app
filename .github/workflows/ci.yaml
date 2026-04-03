@@ -95,7 +95,7 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ steps.tags.outputs.TAG }}
             ${{ steps.tags.outputs.EXTRA_TAG && format('{0}/{1}-{2}:{3}', env.REGISTRY, env.IMAGE_NAME, matrix.service, steps.tags.outputs.EXTRA_TAG) || '' }}
-                cache-from: type=gha,scope=${{ matrix.service }}
+          cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
       - name: Run Trivy vulnerability scanner
@@ -130,7 +130,7 @@ jobs:
           if [[ $GITHUB_REF == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF_NAME#v}
           else
-            VERSION="dev-$(echo ${{ github.sha }} | cut -c1-7)"
+            VERSION=$(echo ${{ github.sha }} | cut -c1-7)
           fi
 
           VALUES_FILE="app/helm/transcriber/values-dev.yaml"
