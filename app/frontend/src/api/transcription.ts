@@ -10,20 +10,29 @@ export const uploadVideo = async (file: File) => {
 
   const { upload_url, job_id, file_identifier } = presignResponse.data;
 
-  // 🔥 KEY LOGIC
-  if (upload_url.startsWith("http")) {
-    // ✅ S3 MODE → direct upload
-    await axios.put(upload_url, file, {
-      headers: { "Content-Type": file.type }
-    });
-  } else {
-    // ✅ LOCAL MODE → upload via API
-    const formData = new FormData();
-    formData.append("file", file);
+  if (!upload_url || !job_id || !file_identifier) {
+    throw new Error("Invalid presign response");
+  }
 
-    await axios.post(`/api/v1/upload/local`, formData, {
-      headers: { "Content-Type": "multipart/form-data" }
-    });
+  try {
+    const isS3 = upload_url.includes("amazonaws.com");
+
+    if (isS3) {
+      await axios.put(upload_url, file, {
+        headers: { "Content-Type": file.type },
+        timeout: 0,
+      });
+    } else {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      await axios.post(`/api/v1/upload/local`, formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+    }
+  } catch (err: any) {
+    console.error("Upload failed", err);
+    throw new Error("Upload failed. Check S3 CORS or network.");
   }
 
   const startResponse = await axios.post(`/api/v1/transcribe/start`, {
