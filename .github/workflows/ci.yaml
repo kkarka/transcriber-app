@@ -94,8 +94,8 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ steps.tags.outputs.TAG }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ steps.tags.outputs.EXTRA_TAG }}
-          cache-from: type=gha,scope=${{ matrix.service }}
+            ${{ steps.tags.outputs.EXTRA_TAG && format('{0}/{1}-{2}:{3}', env.REGISTRY, env.IMAGE_NAME, matrix.service, steps.tags.outputs.EXTRA_TAG) || '' }}
+                cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
       - name: Run Trivy vulnerability scanner
