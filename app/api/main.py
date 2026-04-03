@@ -46,6 +46,8 @@ async def lifespan(app: FastAPI):
 
 # Default to an empty string for local development
 api_router = APIRouter(prefix="/api")
+health_router = APIRouter()
+
 API_PREFIX = os.getenv("API_PREFIX", "")
 
 app = FastAPI(title="Transcriber App", version="1.0.0", lifespan=lifespan)
@@ -114,10 +116,16 @@ def read_root():
 # -------------------------
 # HEALTH CHECK
 # -------------------------
-@api_router.get("/health")
+@health_router.get("/health")
 def health():
     return {"status": "ok"}
 
+@app.get("/ready")
+def ready():
+    # check DB + Redis
+    return {"status": "ready"}
+    
+app.include_router(health_router)
 
 # -------------------------
 # STEP 1: GENERATE UPLOAD URL
